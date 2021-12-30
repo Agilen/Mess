@@ -1,36 +1,41 @@
 package server
 
 import (
+	"encoding/json"
+	"log"
 	"net"
-	"strconv"
+	"time"
 )
 
 var ()
 
 type (
 	serverContext struct {
-		Ports map[int]bool
+		ServerName string
+		ServerIpv4 string
+		Ports      map[int]bool
+		Sockets    []*Socket
 	}
 
 	ConnWithUser struct {
 		Port int
 		Conn net.Conn
 	}
-
-	Socket struct {
-	}
 )
+
+func ListenAndServe() error {
+	SC := NewServerContext()
+	go SC.ListenClientWish()
+
+	return nil
+}
 
 func NewServerContext() *serverContext {
 	return &serverContext{
-		Ports: PrepPortsMap(),
+		ServerName: "SuperPuperServer",
+		ServerIpv4: "172.16.9.120",
+		Ports:      PrepPortsMap(),
 	}
-}
-
-func (CWU *ConnWithUser) CreateNewSocket() (err error) {
-
-	CWU, err = net.Listen("tcp", ":"+strconv.Itoa(TakeFreePort()))
-	return nil
 }
 
 func PrepPortsMap() map[int]bool {
@@ -48,6 +53,57 @@ func TakeFreePort(server *serverContext) int {
 			return i
 		}
 	}
-
 	return 0
+}
+
+func (SC *serverContext) ListenClientWish() {
+
+	listener, err := net.Listen("tcp", ":3333")
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+	for {
+		connection, err := listener.Accept()
+		if err != nil {
+			break
+		}
+
+		BaseInfo, err := json.Marshal(SC)
+		if err != nil {
+			log.Println(err.Error())
+			break
+		}
+
+		_, err = connection.Write(BaseInfo)
+		if err != nil {
+			connection.Close()
+			log.Println(err.Error())
+			break
+		}
+		//////////////////////////////////////////////////////
+		buffer := make([]byte, 2048)
+
+		connection.SetReadDeadline(time.Now().Add(time.Second * 1))
+
+		_, err = connection.Read(buffer)
+		if err != nil {
+			connection.Close()
+			log.Println(err.Error())
+			break
+		}
+		CSI := new(ClientSocketInfo)
+		err = json.Unmarshal(buffer, &CSI)
+		if err != nil {
+			connection.Close()
+			log.Println(err.Error())
+			break
+		}
+		////////////////////////////////////////////////////////
+		CSI.Number = len(SC.Sockets)
+
+		connection.Close()
+
+		SC.Ports[int(buffer[0])] = true
+		SC.Sockets = append(SC.Sockets, SockCreate(*CSI, int(buffer[0])))
+	}
 }
