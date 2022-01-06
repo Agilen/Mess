@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"net"
 	"strconv"
 	"time"
@@ -21,14 +22,15 @@ type ClientSocketInfo struct {
 	Number int
 }
 
-func SockCreate(CSI ClientSocketInfo) *Socket {
+func SockCreate(CSI ClientSocketInfo, errorchan chan error) *Socket {
 	S := &Socket{
 		LifeTime:         10,
 		Client:           CSI,
 		AcceptedAttempts: 5,
-		ErrorChan:        make(chan error),
+		ErrorChan:        errorchan,
 	}
-	S.SockListen()
+	fmt.Println("сокет создан")
+
 	return S
 }
 
@@ -37,6 +39,7 @@ func (S *Socket) SockBind() {
 }
 
 func (S *Socket) SockListen() error {
+	fmt.Println("ждем-с")
 	listener, err := net.Listen("tcp", ":"+strconv.Itoa(S.Client.Port))
 	if err != nil {
 		return err
@@ -47,22 +50,63 @@ func (S *Socket) SockListen() error {
 }
 
 func (S *Socket) SockAccept(listener net.Listener) (err error) {
-	S.Connection.SetDeadline(time.Now().Add(time.Second * 2))
+	// err := S.Connection.SetDeadline(time.Now().Add(time.Second * 2))
+	// if err != nil {
+	// 	S.ErrorChan <- err
+	// 	return
+	// }
+
+	fmt.Println("Еще ждем")
 	S.Connection, err = listener.Accept()
-	S.Connection.SetDeadline(time.Now().Add(time.Minute * time.Duration(S.LifeTime)))
-	S.Connection.Write([]byte("connection is successful"))
+	if err != nil {
+		return err
+	}
+	fmt.Println("дождались")
+	err = S.Connection.SetDeadline(time.Now().Add(time.Minute * time.Duration(S.LifeTime)))
+	if err != nil {
+		return err
+	}
+
+	_, err = S.Connection.Write([]byte("connection is successful"))
+	if err != nil {
+		return err
+	}
 	return
 }
 
-func (S *Socket) SockRecv() {
-
+func (S *Socket) SockRecv() error {
+	var buffer []byte
+	for {
+		_, err := S.Connection.Read(buffer)
+		if err != nil {
+			return err
+		}
+		_, err = S.Connection.Write(buffer)
+		if err != nil {
+			S.ErrorChan <- err
+			return err
+		}
+	}
 }
 
-func (S *Socket) SockSend() {
-
+func (S *Socket) SockSend(message []byte) error {
+	_, err := S.Connection.Write(message)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
-func (S *Socket) SockClose() {
-	S.Connection.Close()
+func (S *Socket) SockClose() error {
+	err := S.Connection.Close()
+	if err != nil {
+		return err
+	}
+	return nil
+}
 
+func (S *Socket) ServeSocket() error {
+	S.SockListen()
+	go S.SockRecv()
+	return nil
 }
