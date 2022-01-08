@@ -1,6 +1,7 @@
 package sqlstore
 
 import (
+	"github.com/Agilen/Mess/server/model"
 	"github.com/Agilen/Mess/server/store"
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
@@ -14,6 +15,7 @@ type Store struct {
 }
 
 func New(db *gorm.DB) *Store {
+	db.AutoMigrate(&model.User{})
 	return &Store{
 		db: db,
 	}

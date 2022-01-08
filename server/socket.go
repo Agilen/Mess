@@ -1,6 +1,8 @@
 package server
 
 import (
+	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"net"
 	"strconv"
@@ -12,7 +14,15 @@ type Socket struct {
 	Client           ClientSocketInfo
 	Connection       net.Conn
 	AcceptedAttempts int
+	Buffer           []byte
 	ErrorChan        chan error
+	Sockets          map[string]*Socket
+}
+
+type Message struct {
+	From    string
+	To      string
+	Message []byte
 }
 
 type ClientSocketInfo struct {
@@ -22,24 +32,20 @@ type ClientSocketInfo struct {
 	Number int
 }
 
-func SockCreate(CSI ClientSocketInfo, errorchan chan error) *Socket {
+func SockCreate(CSI ClientSocketInfo, errorchan chan error, Sockets map[string]*Socket) *Socket {
 	S := &Socket{
 		LifeTime:         10,
 		Client:           CSI,
 		AcceptedAttempts: 5,
+		Buffer:           make([]byte, 2048),
 		ErrorChan:        errorchan,
+		Sockets:          Sockets,
 	}
-	fmt.Println("сокет создан")
 
 	return S
 }
 
-func (S *Socket) SockBind() {
-
-}
-
 func (S *Socket) SockListen() error {
-	fmt.Println("ждем-с")
 	listener, err := net.Listen("tcp", ":"+strconv.Itoa(S.Client.Port))
 	if err != nil {
 		return err
@@ -75,15 +81,18 @@ func (S *Socket) SockAccept(listener net.Listener) (err error) {
 }
 
 func (S *Socket) SockRecv() error {
-	var buffer []byte
+	buffer := make([]byte, 4)
 	for {
 		_, err := S.Connection.Read(buffer)
 		if err != nil {
 			return err
 		}
-		_, err = S.Connection.Write(buffer)
+		mes, data, err := S.ReadFullMessage(buffer)
 		if err != nil {
-			S.ErrorChan <- err
+			return err
+		}
+		err = S.Sockets[mes.To].SockSend(data)
+		if err != nil {
 			return err
 		}
 	}
@@ -106,7 +115,33 @@ func (S *Socket) SockClose() error {
 }
 
 func (S *Socket) ServeSocket() error {
-	S.SockListen()
+	err := S.SockListen()
+	if err != nil {
+		return err
+	}
 	go S.SockRecv()
 	return nil
+}
+
+func (S *Socket) ReadFullMessage(message []byte) (Message, []byte, error) {
+	var data []byte
+	var i int
+	mes := Message{}
+	len := binary.LittleEndian.Uint32(message[:4])
+
+	for i < int(len) {
+		_, err := S.Connection.Read(S.Buffer)
+		if err != nil {
+			return mes, nil, err
+		}
+		data = append(data, S.Buffer...)
+		i += 2048
+	}
+
+	err := json.Unmarshal(data, &mes)
+	if err != nil {
+		return mes, nil, err
+	}
+
+	return mes, data, nil
 }

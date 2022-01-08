@@ -1,7 +1,18 @@
 package main
 
-import server "github.com/Agilen/Mess/server"
+import (
+	"log"
+
+	server "github.com/Agilen/Mess/server"
+	"github.com/Agilen/Mess/server/store/sqlstore"
+)
 
 func main() {
-	server.ListenAndServe()
+	db, err := sqlstore.NewDB("C:/Users/fonta/Desktop/Mess/db.DB")
+	if err != nil {
+		log.Fatal(err)
+	}
+	store := sqlstore.New(db)
+
+	server.ListenAndServe(store)
 }

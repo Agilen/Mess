@@ -1,27 +1,33 @@
 package server
 
 import (
-	"bytes"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net"
-	"time"
+
+	"github.com/Agilen/Mess/server/store"
+
+	"github.com/Agilen/Mess/server/model"
 )
 
 type (
 	ServerContext struct {
+		Store      store.Store
 		ServerName string
 		ServerIpv4 string
 		Ports      map[int]bool
 		Sockets    map[string]*Socket
 		ErrorChan  chan error
+		Conn       net.Conn
 	}
 )
 
-func NewServerContext() *ServerContext {
+func NewServerContext(store store.Store) *ServerContext {
 	return &ServerContext{
+		Store:      store,
 		ServerName: "SuperPuperServer",
 		ServerIpv4: "172.16.9.120",
 		Ports:      PrepPortsMap(),
@@ -30,8 +36,8 @@ func NewServerContext() *ServerContext {
 	}
 }
 
-func ListenAndServe() {
-	SC := NewServerContext()
+func ListenAndServe(store store.Store) {
+	SC := NewServerContext(store)
 	go SC.ListenClientWish()
 	for {
 		HadnleError(<-SC.ErrorChan)
@@ -66,63 +72,123 @@ func (SC *ServerContext) ListenClientWish() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println("сервер запущен")
+	fmt.Println("Cервер запущен")
 	for {
-		fmt.Println("Новая сессия создана")
-		//ждём подключения
-		connection, err := listener.Accept()
-		if err != nil {
-			SC.ErrorChan <- err
-			continue
-		}
-		fmt.Println("подключение создано")
-		bs := make([]byte, 4)
-		binary.LittleEndian.PutUint32(bs, uint32(SC.TakeFreePort()))
-		_, err = connection.Write(bs) //отправлем карту
+		fmt.Println("Слушаем")
+		SC.Conn, err = listener.Accept()
 		if err != nil {
 			SC.ErrorChan <- err
 			continue
 		}
 
-		fmt.Println("список отправлен")
-
-		buffer := make([]byte, 1024)
-		////////////////////////////////////////////////////////
-		err = connection.SetReadDeadline(time.Now().Add(time.Millisecond * 500)) //ждем ответа от клиента, если ответа нет, то рвем подключение и ждем новое
+		message := make([]byte, 1024)
+		_, err = SC.Conn.Read(message)
 		if err != nil {
 			SC.ErrorChan <- err
 			continue
 		}
-		fmt.Println("Ждем ответа")
-		_, err = connection.Read(buffer)
+		err = SC.DataProcessing(message)
 		if err != nil {
 			SC.ErrorChan <- err
 			continue
 		}
-		n := bytes.Split(buffer, []byte{0})
-		fmt.Println("ответ получен")
-		CSI := ClientSocketInfo{}
 
-		err = json.Unmarshal(n[0], &CSI)
-
+		err = SC.Conn.Close()
 		if err != nil {
 			SC.ErrorChan <- err
 			continue
 		}
-		fmt.Println("анмаршал ответа")
-		////////////////////////////////////////////////////////
-		CSI.Number = len(SC.Sockets)
 
-		connection.Close()
-		fmt.Println("создаем сокет")
-		SC.Ports[int(buffer[0])] = true
-		SC.Sockets[CSI.Name] = SockCreate(CSI, SC.ErrorChan)
-		go SC.Sockets[CSI.Name].ServeSocket()
 	}
 }
 
 func (SC *ServerContext) LookForCloseSocket() {
+}
 
+func (SC *ServerContext) DataProcessing(message []byte) error {
+	//4byte - len
+	//16byte - command
+	//else - info
+
+	len := binary.LittleEndian.Uint32(message[:4])
+	command := string(message[4:20])
+	data := message[20:len]
+
+	err := SC.Command(command, data)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (SC *ServerContext) Command(command string, data []byte) error {
+	switch command {
+	case "registration":
+		err := SC.NewUser(data) //исправлю
+		if err != nil {
+			return err
+		}
+	case "authorization":
+		//here will be DH
+		fmt.Println("auth")
+	case "conntosocket":
+		err := SC.GiveClientFreePort()
+		if err != nil {
+			return err
+		}
+		err = SC.Sock(data)
+		if err != nil {
+			return err
+		}
+	default:
+		return errors.New("unknown command")
+	}
+
+	return nil
+}
+
+func (SC *ServerContext) GiveClientFreePort() error {
+	bs := make([]byte, 4)
+	binary.LittleEndian.PutUint32(bs, uint32(SC.TakeFreePort()))
+	_, err := SC.Conn.Write(bs)
+	if err != nil {
+		return err
+	}
+	return nil
+
+}
+
+func (SC *ServerContext) Sock(data []byte) error {
+	CSI := ClientSocketInfo{}
+
+	err := json.Unmarshal(data, &CSI)
+	if err != nil {
+		return err
+	}
+
+	SC.Ports[CSI.Port] = true
+	SC.Sockets[CSI.Name] = SockCreate(CSI, SC.ErrorChan, SC.Sockets)
+	_, err = SC.Conn.Write([]byte("socket is ready"))
+	if err != nil {
+		return err
+	}
+	go SC.Sockets[CSI.Name].ServeSocket()
+
+	return nil //add errchan
+}
+
+func (SC *ServerContext) NewUser(data []byte) error {
+	user := model.User{}
+	err := json.Unmarshal(data, &user.BaseUserInfo)
+	if err != nil {
+		return err
+	}
+	err = SC.Store.User().Create(&user)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 //TODO: Придумать нормальный хендлер
