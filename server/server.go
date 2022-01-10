@@ -102,9 +102,6 @@ func (SC *ServerContext) ListenClientWish() {
 	}
 }
 
-func (SC *ServerContext) LookForCloseSocket() {
-}
-
 func (SC *ServerContext) DataProcessing(message []byte) error {
 	//4byte - len
 	//16byte - command
@@ -112,7 +109,7 @@ func (SC *ServerContext) DataProcessing(message []byte) error {
 
 	len := binary.LittleEndian.Uint32(message[:4])
 	command := string(message[4:20])
-	data := message[20:len]
+	data := message[20 : len+20]
 
 	err := SC.Command(command, data)
 	if err != nil {
@@ -156,7 +153,6 @@ func (SC *ServerContext) GiveClientFreePort() error {
 		return err
 	}
 	return nil
-
 }
 
 func (SC *ServerContext) Sock(data []byte) error {
@@ -168,7 +164,7 @@ func (SC *ServerContext) Sock(data []byte) error {
 	}
 
 	SC.Ports[CSI.Port] = true
-	SC.Sockets[CSI.Name] = SockCreate(CSI, SC.ErrorChan, SC.Sockets)
+	SC.Sockets[CSI.Name] = SockCreate(CSI, SC.ErrorChan, &SC.Sockets)
 	_, err = SC.Conn.Write([]byte("socket is ready"))
 	if err != nil {
 		return err

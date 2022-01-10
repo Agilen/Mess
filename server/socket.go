@@ -16,7 +16,7 @@ type Socket struct {
 	AcceptedAttempts int
 	Buffer           []byte
 	ErrorChan        chan error
-	Sockets          map[string]*Socket
+	Sockets          *map[string]*Socket
 }
 
 type Message struct {
@@ -32,7 +32,7 @@ type ClientSocketInfo struct {
 	Number int
 }
 
-func SockCreate(CSI ClientSocketInfo, errorchan chan error, Sockets map[string]*Socket) *Socket {
+func SockCreate(CSI ClientSocketInfo, errorchan chan error, Sockets *map[string]*Socket) *Socket {
 	S := &Socket{
 		LifeTime:         10,
 		Client:           CSI,
@@ -67,11 +67,7 @@ func (S *Socket) SockAccept(listener net.Listener) (err error) {
 	if err != nil {
 		return err
 	}
-	fmt.Println("дождались")
-	err = S.Connection.SetDeadline(time.Now().Add(time.Minute * time.Duration(S.LifeTime)))
-	if err != nil {
-		return err
-	}
+	go S.SockClose()
 
 	_, err = S.Connection.Write([]byte("connection is successful"))
 	if err != nil {
@@ -91,7 +87,8 @@ func (S *Socket) SockRecv() error {
 		if err != nil {
 			return err
 		}
-		err = S.Sockets[mes.To].SockSend(data)
+		b := *S.Sockets //?????
+		err = b[mes.To].SockSend(data)
 		if err != nil {
 			return err
 		}
@@ -107,10 +104,13 @@ func (S *Socket) SockSend(message []byte) error {
 }
 
 func (S *Socket) SockClose() error {
+	time.Sleep(time.Minute * time.Duration(S.LifeTime))
 	err := S.Connection.Close()
 	if err != nil {
 		return err
 	}
+	delete(*S.Sockets, S.Client.Name)
+
 	return nil
 }
 
