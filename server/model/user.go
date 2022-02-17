@@ -15,8 +15,8 @@ type User struct {
 
 type BaseUserInfo struct {
 	gorm.Model
-	Name     string `gorm:"not null;unique;"`
-	Email    string `gorm:"not null;type:varchar(100)"`
+	NickName string `gorm:"not null;"`
+	Login    string `gorm:"not null;unique;"`
 	Password string `gorm:"not null;type:varchar(100)"`
 }
 

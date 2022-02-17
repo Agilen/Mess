@@ -1,4 +1,4 @@
-package mess
+package main
 
 func main() {
 

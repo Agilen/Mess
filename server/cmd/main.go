@@ -8,7 +8,7 @@ import (
 )
 
 func main() {
-	db, err := sqlstore.NewDB("C:/Users/fonta/Desktop/Mess/db.DB")
+	db, err := sqlstore.NewDB("/home/kolona/Mess/db.DB")
 	if err != nil {
 		log.Fatal(err)
 	}

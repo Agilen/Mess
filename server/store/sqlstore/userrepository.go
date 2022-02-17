@@ -13,7 +13,7 @@ type UserRepository struct {
 func (r *UserRepository) Create(u *model.User) error {
 	var count int64
 	u.HashPassword()
-	err := r.store.db.Where("name = ?", u.BaseUserInfo.Name).Find(&[]model.User{}).Count(&count).Error
+	err := r.store.db.Where("name = ?", u.BaseUserInfo.Login).Find(&[]model.User{}).Count(&count).Error
 	if err != nil {
 		return err
 	}
@@ -26,4 +26,27 @@ func (r *UserRepository) Create(u *model.User) error {
 	}
 
 	return nil
+}
+
+func (r *UserRepository) FindUser(login string, password string) (bool, error) {
+
+	user := &model.User{
+		BaseUserInfo: model.BaseUserInfo{
+			Login:    login,
+			Password: password,
+		},
+	}
+
+	user.HashPassword()
+
+	err := r.store.db.Where(user).Find(&user).Error
+	if err != nil {
+		return false, err
+	}
+
+	if user == nil {
+		return false, nil
+	}
+
+	return true, nil
 }
